@@ -1,9 +1,8 @@
 wasd2: [
-     testing: value
      wasd: tester0
      cap: [
-	youisstupid: ikr
+          testing: value
      ]
+     testing: value
 ]
-wasd: halp me
 testing: value

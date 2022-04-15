@@ -6,7 +6,7 @@
 
 #include "haxup.h"
 #include "config.h"
-#include "utils.h"
+#include "configutils.h"
 
 void free_config(struct config_t **cfg)
 {
@@ -310,6 +310,7 @@ uint8_t *config_entry_get(struct config_t *cfg, char *path, char *entry)
 
 struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_str, uint8_t *value)
 {
+    struct config_entry_parent_t *entry_parent = NULL;
     struct config_entry_parent_t *curr = NULL;
     FILE *fp = fopen(cfg->location, "r");
     if(!fp)
@@ -326,7 +327,17 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
         return cfg;
     }
 
+    if(path != NULL)
+    {
+        entry_parent = malloc(sizeof(struct config_entry_parent_t));
+        entry_parent->prev = NULL;
+        entry_parent->next = NULL;
+        entry_parent->value_indent = util_get_char_count(path, '.') * 5;
+        util_cpy(entry_parent->parent_path, path, 0, strlen(path));
+    }
+
     uint8_t replaced = 0;
+    uint8_t flush = 1;
     int in_group = 0;
     int group_count = 0;
 
@@ -395,6 +406,9 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                         parent->value_indent += curr->value_indent+1;
                         parent->prev = curr;
                         curr = parent;
+                        #ifdef DEBUG
+                        printf("Got Parent %s\r\n", parent->parent_path);
+                        #endif
                     }
                     first_parent = 0;
                     break;
@@ -407,6 +421,26 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
             {
                 if(buffer[pos] == ']')
                 {
+                    if(replaced == 0 && curr != NULL && path != NULL)
+                    {
+                        if(strcmp(curr->parent_path, path) == 0 && value != NULL)
+                        {
+                            char tmp[512];
+                            util_zero(tmp, 512);
+                            int x;
+                            for(x = 0; x < curr->value_indent*5; x++)
+                            {
+                                util_cpy(tmp+strlen(tmp), " ", 0, 1);
+                            }
+                            fprintf(newfp, "%s%s: %s\r\n", tmp, entry_str, value);
+                            fflush(newfp);
+                            replaced = 1;
+                            flush = 1;
+                            #ifdef DEBUG
+                            printf("[3] write %s:%s with %s\r\n", path, entry_str, value);
+                            #endif
+                        }
+                    }
                     in_group--;
                     if(curr != NULL && curr->prev != NULL)
                     {
@@ -434,19 +468,31 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                     util_zero(entry->value, 1024);
                     util_cpy(entry->location, buffer, util_get_white_end(buffer, 1024), pos-1);
                     util_cpy(entry->value, buffer, pos+2, 1024-pos);
-                    if(path != NULL && strcmp(path, entry->parent->parent_path))
+                    if(path != NULL && strcmp(path, entry->parent->parent_path) == 0)
                     {
                         if(strcmp(entry->location, entry_str) == 0)
                         {
-                            int whitespace = util_get_white_end(buffer, 1024);
-                            int a = 0;
-                            for(a = 0; a < whitespace; a++)
+                            if(value == NULL)
                             {
-                                fprintf(newfp, " ");
+                                replaced = 1;
+                                flush = 0;
                             }
-                            fprintf(newfp, "%s: %s\r\n", entry->location, value);
-                            fflush(newfp);
-                            replaced = 1;
+                            else 
+                            {
+                                int whitespace = util_get_white_end(buffer, 1024);
+                                int a = 0;
+                                for(a = 0; a < whitespace; a++)
+                                {
+                                    fprintf(newfp, " ");
+                                }
+                                fprintf(newfp, "%s: %s\r\n", entry->location, value);
+                                fflush(newfp);
+                                replaced = 1;
+                                flush = 0;
+                                #ifdef DEBUG
+                                printf("[1] replace %s:%s with %s\r\n", path, entry->location, value);
+                                #endif
+                            }
                         }
                     }
                     free(entry);
@@ -473,15 +519,27 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                     {
                         if(strcmp(entry->location, entry_str) == 0)
                         {
-                            int whitespace = util_get_white_end(buffer, 1024);
-                            int a = 0;
-                            for(a = 0; a < whitespace; a++)
+                            if(value == NULL)
                             {
-                                fprintf(newfp, " ");
+                                replaced = 1;
+                                flush = 0;
                             }
-                            fprintf(newfp, "%s: %s\r\n", entry->location, value);
-                            fflush(newfp);
-                            replaced = 1;
+                            else 
+                            {
+                                int whitespace = util_get_white_end(buffer, 1024);
+                                int a = 0;
+                                for(a = 0; a < whitespace; a++)
+                                {
+                                    fprintf(newfp, " ");
+                                }
+                                fprintf(newfp, "%s: %s\r\n", entry->location, value);
+                                fflush(newfp);
+                                replaced = 1;
+                                flush = 0;
+                                #ifdef DEBUG
+                                printf("[2] replace %s:%s with %s\r\n", path, entry->location, value);
+                                #endif
+                            }
                         }
                     }
                     free(entry);
@@ -490,40 +548,31 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                 }
             }
         }
-        fprintf(newfp, "%s\r\n", buffer);
-        fflush(newfp);
-        util_zero(buffer, 1024);
-        if(replaced == 0 && curr != NULL && path != NULL)
+        if(flush == 1)
         {
-            if(strcmp(curr->parent_path, path) == 0)
-            {
-                char tmp[512];
-                util_zero(tmp, 512);
-                int x;
-                for(x = 0; x < curr->value_indent; x++)
-                {
-                    util_cpy(tmp+strlen(tmp), "     ", 0, 5);
-                }
-                fprintf(newfp, "%s%s: %s\r\n", tmp, entry_str, value);
-                replaced = 1;
-            }
-        }
-    }
-
-    if(replaced == 0)
-    {
-        if(path == NULL)
-        {
-            fprintf(newfp, "%s: %s\r\n", entry_str, value);
+            fprintf(newfp, "%s\r\n", buffer);
             fflush(newfp);
         }
         else
         {
+            flush = 1;
+        }
+        util_zero(buffer, 1024);
+    }
+
+    if(replaced == 0)
+    {
+        if(path == NULL && value != NULL)
+        {
+            fprintf(newfp, "%s: %s\r\n", entry_str, value);
+            fflush(newfp);
             #ifdef DEBUG
-
-            printf("Failed to set variable in config\r\n");
-
+            printf("[4] replace %s with %s\r\n", entry_str, value);
             #endif
+        }
+        else
+        {
+
         }
     }
 

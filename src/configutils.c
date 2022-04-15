@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 #include "haxup.h"
-#include "utils.h"
+#include "configutils.h"
 
 void util_zero(void *ptr, int size)
 {
@@ -34,9 +34,21 @@ int util_get_white_end(void *ptr, int size)
 {
     uint8_t *ptr_p = ptr;
     int pos, ret = 0;
-    while((((uint8_t *)ptr)[ret]) == ' ' || (((uint8_t *)ptr)[ret]) == '\t')
+    while((ptr_p[ret]) == ' ' || ((ptr_p[ret]) == '\t'))
     {
         ret++;
+    }
+    return ret;
+}
+
+int util_get_char_count(void *ptr, char delim)
+{
+    uint8_t *ptr_p = ptr;
+    int pos = 0, ret = 0;
+    while(ptr_p[pos] != '\0')
+    {
+        if(ptr_p[pos] == delim) ret++;
+        pos++;
     }
     return ret;
 }
