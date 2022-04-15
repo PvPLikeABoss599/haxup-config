@@ -308,6 +308,30 @@ uint8_t *config_entry_get(struct config_t *cfg, char *path, char *entry)
     return 0;
 }
 
+uint8_t **config_entry_get_section(struct config_t *cfg, char *path, int *_ret_len)
+{
+    uint8_t **ret = NULL;
+    int x, ret_len = 0;
+    if(path != NULL)
+    {
+        for(x = 0; x < cfg->entries_len; x++)
+        {
+            if(cfg->entries[x]->parent == NULL) continue;
+            if(strcmp(cfg->entries[x]->parent->parent_path, path) == 0)
+            {
+                ret = realloc(ret, (ret_len+1)*sizeof(uint8_t *));
+                ret[ret_len] = malloc(strlen(cfg->entries[x]->location)+1);
+                uint8_t *str = ret[ret_len];
+                strcpy(str, cfg->entries[x]->location);
+                str[strlen(cfg->entries[x]->location)] = 0;
+                ret_len++;
+            }
+        }
+    }
+    *_ret_len = ret_len;
+    return ret;
+}
+
 struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_str, uint8_t *value)
 {
     struct config_entry_parent_t *entry_parent = NULL;

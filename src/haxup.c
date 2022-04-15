@@ -105,6 +105,16 @@ int main()
 
     printf("\r\n");
 
+    int lines_count = 0;
+    uint8_t **lines = config_entry_get_section(main_conf, "wasd2", &lines_count);
+    int x;
+    for(x = 0; x < lines_count; x++)
+    {
+        printf("got entry from section wasd2:%s\r\n", lines[x]);
+    }
+
+    printf("\r\n");
+
     free_config(&main_conf);
     
     return 0;
