@@ -4,7 +4,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "haxup.h"
 #include "config.h"
 #include "configutils.h"
 
@@ -33,7 +32,7 @@ void free_config(struct config_t **cfg)
 
     (*cfg)->in_group = 0;
 
-    util_zero((*cfg)->location, 1024);
+    configutil_zero((*cfg)->location, 1024);
 
     free(*cfg);
     *cfg = NULL;
@@ -45,8 +44,8 @@ struct config_t *load_config(char *path)
 
     struct config_entry_parent_t *curr = NULL;
 
-    util_zero(config->location, 1024);
-    util_cpy(config->location, path, 0, strlen(path));
+    configutil_zero(config->location, 1024);
+    configutil_cpy(config->location, path, 0, configutil_len(path));
     config->in_group = 0;
     config->entries = NULL;
     config->entries_len = 0;
@@ -62,7 +61,7 @@ struct config_t *load_config(char *path)
     }
 
     unsigned char *buffer = malloc(1024);
-    util_zero(buffer, 1024);
+    configutil_zero(buffer, 1024);
     while(fgets(buffer, 1024, fp) != NULL)
     {
         int pos, first_parent = 0;
@@ -102,27 +101,26 @@ struct config_t *load_config(char *path)
 
             parent->next = NULL;
             parent->prev = NULL;
-            util_zero(parent->parent_path, 1024);
+            configutil_zero(parent->parent_path, 1024);
 
-            uint8_t end = 0;
             for(pos = 0; pos < 1024; pos++)
             {
                 if(buffer[pos] == ':')
                 {
                     if(curr == NULL)
                     {
-                        util_cpy(parent->parent_path, buffer, util_get_white_end(buffer, 1024), pos-1);
+                        configutil_cpy(parent->parent_path, buffer+configutil_get_white_end(buffer, 1024), 0, pos-configutil_get_white_end(buffer, 1024));
                         parent->prev = NULL;
                         curr = parent;
                     }
                     else
                     {
                         int parent_path_len = 0;
-                        util_cpy(parent->parent_path, curr->parent_path, 0, strlen(curr->parent_path));
-                        parent_path_len = strlen(parent->parent_path);
-                        util_cpy(parent->parent_path+parent_path_len, ".", 0, 1);
-                        parent_path_len = strlen(parent->parent_path);
-                        util_cpy(parent->parent_path+parent_path_len, buffer, util_get_white_end(buffer, 1024), pos-1);
+                        configutil_cpy(parent->parent_path, curr->parent_path, 0, configutil_len(curr->parent_path));
+                        parent_path_len = configutil_len(parent->parent_path);
+                        configutil_cpy(parent->parent_path+parent_path_len, ".", 0, 1);
+                        parent_path_len = configutil_len(parent->parent_path);
+                        configutil_cpy(parent->parent_path+parent_path_len, buffer+configutil_get_white_end(buffer, 1024), 0, pos-configutil_get_white_end(buffer, 1024));
                         parent->prev = curr;
                         curr = parent;
                     }
@@ -153,15 +151,13 @@ struct config_t *load_config(char *path)
                     config->entries = realloc(config->entries, (config->entries_len+1) * sizeof(struct config_entry_t *));
                     config->entries[config->entries_len] = malloc(sizeof(struct config_entry_t));
                     struct config_entry_t *entry = config->entries[config->entries_len];
+                    int start = configutil_get_white_end(buffer, 1024);
                     config->entries_len++;
                     entry->parent = curr;
-                    util_zero(entry->location, 1024);
-                    util_zero(entry->value, 1024);
-                    util_cpy(entry->location, buffer, util_get_white_end(buffer, 1024), pos-1);
-                    util_cpy(entry->value, buffer, pos+2, 256);
-                    #ifdef DEBUG
-                    printf("whitespace is %d\r\n", util_get_white_end(buffer, 1024));
-                    #endif
+                    configutil_zero(entry->location, 1024);
+                    configutil_zero(entry->value, 1024);
+                    configutil_cpy(entry->location, buffer+start, 0, pos-start);
+                    configutil_cpy(entry->value, buffer+pos+2, 0, configutil_len(buffer)-pos-2);
                     break;
                 }
             }
@@ -175,18 +171,19 @@ struct config_t *load_config(char *path)
                     config->entries = realloc(config->entries, (config->entries_len+1) * sizeof(struct config_entry_t *));
                     config->entries[config->entries_len] = malloc(sizeof(struct config_entry_t));
                     struct config_entry_t *entry = config->entries[config->entries_len];
+                    int start = configutil_get_white_end(buffer, 1024);
                     config->entries_len++;
                     entry->parent = NULL;
-                    util_zero(entry->location, 1024);
-                    util_zero(entry->value, 1024);
-                    util_cpy(entry->location, buffer, util_get_white_end(buffer, 1024), pos-1);
-                    util_cpy(entry->value, buffer, pos+2, 256);
+                    configutil_zero(entry->location, 1024);
+                    configutil_zero(entry->value, 1024);
+                    configutil_cpy(entry->location, buffer+start, 0, pos-start);
+                    configutil_cpy(entry->value, buffer+pos+2, 0, configutil_len(buffer)-pos-2);
                     break;
                 }
             }
         }
 
-        util_zero(buffer, 1024);
+        configutil_zero(buffer, 1024);
     }
 
     fclose(fp);
@@ -227,6 +224,7 @@ uint8_t config_entry_exists(struct config_t *cfg, char *path, char *entry)
         {
             if(strcmp(cfg->parents[x]->parent_path, path) == 0)
             {
+                if(entry == NULL) return 1;
                 struct config_entry_parent_t *parent;
                 parent = cfg->parents[x];
                 for(x = 0; x < cfg->entries_len; x++)
@@ -242,7 +240,7 @@ uint8_t config_entry_exists(struct config_t *cfg, char *path, char *entry)
             }
         }
     }
-    else
+    else if(entry != NULL)
     {
         for(x = 0; x < cfg->entries_len; x++)
         {
@@ -275,10 +273,10 @@ uint8_t *config_entry_get(struct config_t *cfg, char *path, char *entry)
                     {
                         if(strcmp(cfg->entries[x]->location, entry) == 0)
                         {
-                            uint8_t *ret = malloc(strlen(cfg->entries[x]->value)+2);
-                            util_zero(ret, strlen(cfg->entries[x]->value)+2);
-                            util_cpy(ret, cfg->entries[x]->value, 0, strlen(cfg->entries[x]->value));
-                            util_cpy(ret+strlen(ret), "\0", 0, 1);
+                            uint8_t *ret = malloc(configutil_len(cfg->entries[x]->value)+2);
+                            configutil_zero(ret, configutil_len(cfg->entries[x]->value)+2);
+                            configutil_cpy(ret, cfg->entries[x]->value, 0, configutil_len(cfg->entries[x]->value));
+                            configutil_cpy(ret+configutil_len(ret), "\0", 0, 1);
                             return ret;
                         }
                     }
@@ -294,18 +292,18 @@ uint8_t *config_entry_get(struct config_t *cfg, char *path, char *entry)
             {
                 if(strcmp(cfg->entries[x]->location, entry) == 0)
                 {
-                    uint8_t *ret = malloc(strlen(cfg->entries[x]->value)+2);
-                    util_zero(ret, strlen(cfg->entries[x]->value)+2);
-                    util_cpy(ret, cfg->entries[x]->value, 0, strlen(cfg->entries[x]->value));
-                    util_cpy(ret+strlen(ret), "\0", 0, 1);
+                    uint8_t *ret = malloc(configutil_len(cfg->entries[x]->value)+2);
+                    configutil_zero(ret, configutil_len(cfg->entries[x]->value)+2);
+                    configutil_cpy(ret, cfg->entries[x]->value, 0, configutil_len(cfg->entries[x]->value));
+                    configutil_cpy(ret+configutil_len(ret), "\0", 0, 1);
                     return ret;
                 }
             }
         }
     }
     uint8_t *ret = malloc(5);
-    util_cpy(ret, "NULL\0", 0, 5);
-    return 0;
+    configutil_cpy(ret, "NULL\0", 0, 5);
+    return ret;
 }
 
 uint8_t **config_entry_get_section(struct config_t *cfg, char *path, int *_ret_len)
@@ -314,17 +312,68 @@ uint8_t **config_entry_get_section(struct config_t *cfg, char *path, int *_ret_l
     int x, ret_len = 0;
     if(path != NULL)
     {
-        for(x = 0; x < cfg->entries_len; x++)
+        for(x = 0; x < cfg->parents_len; x++)
         {
-            if(cfg->entries[x]->parent == NULL) continue;
-            if(strcmp(cfg->entries[x]->parent->parent_path, path) == 0)
+            if(strcmp(cfg->parents[x]->parent_path, path) == 0)
             {
-                ret = realloc(ret, (ret_len+1)*sizeof(uint8_t *));
-                ret[ret_len] = malloc(strlen(cfg->entries[x]->location)+1);
-                uint8_t *str = ret[ret_len];
-                strcpy(str, cfg->entries[x]->location);
-                str[strlen(cfg->entries[x]->location)] = 0;
-                ret_len++;
+                printf("parent \"%s\" path \"%s\"\r\n", cfg->parents[x]->parent_path, path);
+                int j = 0;
+                
+                for(j = 0; j < cfg->entries_len; j++)
+                {
+                    if(cfg->entries[j]->parent != NULL && cfg->entries[j]->parent->prev != NULL)
+                    {
+                        printf("compare path to parent path \"%s\" at \"%s\"\r\n", path, cfg->entries[j]->parent->prev->parent_path);
+                        if(!strcmp(path, cfg->entries[j]->parent->prev->parent_path))
+                        {
+                             /*int i, found = 0;
+                             for(i = 0; i < ret_len; i++)
+                             {
+                                  if(strcmp(ret[i],cfg->entries[j]->parent->parent_path) == 0)
+                                  {
+                                      found = 1;
+                                      break;
+                                  }
+                             }
+                             
+                            if(found == 1) continue;
+                            */
+                             
+                            printf("Found entry section %s at %d\r\n", cfg->entries[j]->parent->parent_path, j);
+                            ret = realloc(ret, (ret_len+1)*sizeof(uint8_t *));
+                            ret[ret_len] = malloc(configutil_len(cfg->entries[j]->parent->parent_path)+1);
+                            uint8_t *str = ret[ret_len];
+                            strcpy(str,cfg->entries[j]->parent->parent_path);
+                            str[configutil_len(cfg->entries[j]->parent->parent_path)] = 0;
+                            ret_len++;
+                            continue;
+                        }
+                    }
+                    else if(path == NULL)
+                    {
+                        int i, found = 0;
+                        for(i = 0; i < ret_len; i++)
+                        {
+                          if(strcmp(ret[i],cfg->entries[j]->parent->parent_path) == 0)
+                          {
+                              found = 1;
+                              break;
+                          }
+                        }
+
+                        if(found == 1) continue;
+
+                        printf("Found entry section %s at %d\r\n", cfg->entries[j]->parent->parent_path, j);
+                        ret = realloc(ret, (ret_len+1)*sizeof(uint8_t *));
+                        ret[ret_len] = malloc(configutil_len(cfg->entries[j]->parent->parent_path)+1);
+                        uint8_t *str = ret[ret_len];
+                        strcpy(str,cfg->entries[j]->parent->parent_path);
+                        str[configutil_len(cfg->entries[j]->parent->parent_path)] = 0;
+                        ret_len++;
+                        continue;
+                    }
+                }
+                break;
             }
         }
     }
@@ -334,17 +383,23 @@ uint8_t **config_entry_get_section(struct config_t *cfg, char *path, int *_ret_l
 
 struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_str, uint8_t *value)
 {
-    struct config_entry_parent_t *entry_parent = NULL;
+    struct config_entry_parent_t *parent_find = {NULL};
+    int parent_find_len = 0;
+
     struct config_entry_parent_t *curr = NULL;
+
     FILE *fp = fopen(cfg->location, "r");
+    uint8_t path_exists = 1;
+    
     if(!fp)
     {
         return cfg;
     }
 
     char newfile[1024];
-    util_cpy(newfile, cfg->location, 0, 1024);
-    util_cpy(newfile+strlen(newfile), ".tmp", 0, 4);
+    configutil_zero(newfile, 1024);
+    configutil_cpy(newfile, cfg->location, 0, configutil_len(cfg->location));
+    configutil_cpy(newfile+configutil_len(newfile), ".tmp", 0, 4);
     FILE *newfp = fopen(newfile, "w+");
     if(!newfp)
     {
@@ -353,11 +408,154 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
 
     if(path != NULL)
     {
-        entry_parent = malloc(sizeof(struct config_entry_parent_t));
-        entry_parent->prev = NULL;
-        entry_parent->next = NULL;
-        entry_parent->value_indent = util_get_char_count(path, '.') * 5;
-        util_cpy(entry_parent->parent_path, path, 0, strlen(path));
+        path_exists = 0;
+        if(config_entry_exists(cfg, path, NULL) != 1)
+        {
+            int path_parts_count = 0;
+            uint8_t **path_parts = configutil_tokenize(path, configutil_len(path), &path_parts_count, '.');
+
+            #ifdef DEBUG
+            printf("got %d path_parts from path %s\r\n", path_parts_count, path);
+            #endif
+            if(path_parts != NULL)
+            {
+                if(path_parts_count > 0)
+                {
+                    struct config_entry_parent_t *last_parent = NULL;
+                    char *tmp_path = malloc(512);//start at 0th part and check exists
+                    int tmp_path_len = 0;
+                    int x; 
+
+                    configutil_zero(tmp_path, 512);
+
+                    for(x = 0; x < path_parts_count; x++)
+                    {
+                        #ifdef DEBUG
+                        printf("%d:(%s)\r\n", configutil_len(path_parts[x]), path_parts[x]);
+                        #endif
+                        if(x > 0)
+                        {
+                            tmp_path_len = configutil_cpy(tmp_path, ".", tmp_path_len, tmp_path_len+1);
+                            tmp_path_len = configutil_cpy(tmp_path, path_parts[x], tmp_path_len, tmp_path_len+configutil_len(path_parts[x]));
+                        }
+                        else
+                        {
+                            tmp_path_len = configutil_cpy(tmp_path, path_parts[x], tmp_path_len, tmp_path_len+configutil_len(path_parts[x]));
+                        }
+
+                        #ifdef DEBUG
+                        printf("tmp_path = (%s)\r\n", tmp_path);
+                        #endif
+
+                        if(config_entry_exists(cfg, tmp_path, NULL) == 1)
+                        {
+                            path_exists = 1;
+                            if(last_parent != NULL)
+                            {
+                                free(last_parent);
+                                last_parent = NULL;
+                            }
+                            last_parent = malloc(sizeof(struct config_entry_parent_t));
+                            configutil_zero(last_parent, sizeof(struct config_entry_parent_t));
+                            configutil_cpy(last_parent->parent_path, tmp_path, 0, tmp_path_len);
+                        }
+                        else
+                        {
+                            if(last_parent != NULL)
+                            {
+                                parent_find = realloc(parent_find, (parent_find_len+1)*sizeof(struct config_entry_parent_t));
+                                configutil_zero(&(parent_find[parent_find_len]), sizeof(struct config_entry_parent_t));
+                                configutil_cpy(parent_find[parent_find_len].parent_path, last_parent->parent_path, 0, configutil_len(last_parent->parent_path));
+                                parent_find_len++;
+                                free(last_parent);
+                                last_parent = NULL;
+                            }
+
+                            parent_find = realloc(parent_find, (parent_find_len+1)*sizeof(struct config_entry_parent_t));
+                            configutil_zero(&(parent_find[parent_find_len]), sizeof(struct config_entry_parent_t));
+                            configutil_cpy(parent_find[parent_find_len].parent_path, tmp_path, 0, tmp_path_len);
+                            parent_find_len++;
+                        }
+                        free(path_parts[x]);
+                        path_parts[x] = NULL;
+                    }
+                    configutil_zero(tmp_path, 512);
+                    free(tmp_path);
+                    tmp_path = NULL;
+                    
+                    free(path_parts);
+                    path_parts = NULL;
+                }
+            }
+        }
+        else
+        {
+            path_exists = 1;
+
+            parent_find = realloc(parent_find, (parent_find_len+1)*sizeof(struct config_entry_parent_t));
+            configutil_zero(&(parent_find[parent_find_len]), sizeof(struct config_entry_parent_t));
+            configutil_cpy(parent_find[parent_find_len].parent_path, path, 0, configutil_len(path));
+            parent_find_len++;
+        }
+    }
+
+    #ifdef DEBUG
+
+    if(parent_find != NULL)
+    {
+        int x;
+        for(x = 0; x < parent_find_len; x++)
+        {
+            printf("parent_find[%d] = (%s)\r\n", x, parent_find[x].parent_path);
+        }
+    }
+
+    #endif
+
+    if(path_exists == 0)
+    {
+        int x;
+        for(x = 0; x < parent_find_len; x++)
+        {
+            int xx, indent = x*5;
+            for(xx = 0; xx < indent; xx++)
+            {
+                fprintf(newfp, " ");
+            }
+            fprintf(fp, "%s: [ \r\n", parent_find[x].parent_path);
+            if(x == parent_find_len-1)
+            {
+                for(xx = 0; xx < indent+5; xx++)
+                {
+                    fprintf(newfp, " ");
+                }
+                fprintf(newfp, "%s: %s \r\n", entry_str, value);
+            }
+        }
+        for(x = 0; x < parent_find_len; x++)
+        {
+            int xx, indent = x*5;
+            for(xx = 0; xx < indent+5; xx++)
+            {
+                fprintf(newfp, " ");
+            }
+            fprintf(newfp, "] \r\n");
+        }
+
+        fclose(fp);
+        fclose(newfp);
+        unlink(cfg->location);
+        rename(newfile, cfg->location);
+
+        char cfg_path[1024];
+        configutil_zero(cfg_path, 1024);
+        configutil_cpy(cfg_path, cfg->location, 0, configutil_len(cfg->location));
+
+        free_config(&cfg);
+
+        cfg = load_config(cfg_path);
+
+        return cfg;
     }
 
     uint8_t replaced = 0;
@@ -366,9 +564,10 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
     int group_count = 0;
 
     char *buffer = malloc(1024);
-    util_zero(buffer, 1024);
+    configutil_zero(buffer, 1024);
     while(fgets(buffer, 1024, fp) != NULL)
     {
+        flush = 1;
         int pos, first_parent = 0;
 
         for(pos = 0; pos < 1024; pos++)
@@ -404,7 +603,7 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
 
             parent->prev = NULL;
             parent->next = NULL;
-            util_zero(parent->parent_path, 1024);
+            configutil_zero(parent->parent_path, 1024);
             parent->value_indent = 0;
 
             uint8_t end = 0;
@@ -414,7 +613,7 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                 {
                     if(curr == NULL)
                     {
-                        util_cpy(parent->parent_path, buffer, util_get_white_end(buffer, 1024), pos-1);
+                        configutil_cpy(parent->parent_path, buffer+configutil_get_white_end(buffer, 1024), 0, pos-configutil_get_white_end(buffer, 1024));
                         parent->prev = NULL;
                         curr = parent;
                         parent->value_indent = 1;
@@ -422,11 +621,11 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                     else
                     {
                         int parent_path_len = 0;
-                        util_cpy(parent->parent_path, curr->parent_path, 0, strlen(curr->parent_path));
-                        parent_path_len = strlen(parent->parent_path);
-                        util_cpy(parent->parent_path+parent_path_len, ".", 0, 1);
-                        parent_path_len = strlen(parent->parent_path);
-                        util_cpy(parent->parent_path+parent_path_len, buffer, util_get_white_end(buffer, 1024), pos-1);
+                        configutil_cpy(parent->parent_path, curr->parent_path, 0, configutil_len(curr->parent_path));
+                        parent_path_len = configutil_len(parent->parent_path);
+                        configutil_cpy(parent->parent_path+parent_path_len, ".", 0, 1);
+                        parent_path_len = configutil_len(parent->parent_path);
+                        configutil_cpy(parent->parent_path+parent_path_len, buffer+configutil_get_white_end(buffer, 1024), 0, pos-configutil_get_white_end(buffer, 1024));
                         parent->value_indent += curr->value_indent+1;
                         parent->prev = curr;
                         curr = parent;
@@ -445,24 +644,108 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
             {
                 if(buffer[pos] == ']')
                 {
-                    if(replaced == 0 && curr != NULL && path != NULL)
+                    if(replaced == 0 && curr != NULL && parent_find != NULL)
                     {
-                        if(strcmp(curr->parent_path, path) == 0 && value != NULL)
+                        if(strcmp(curr->parent_path, parent_find[0].parent_path) == 0 && value != NULL)
                         {
-                            char tmp[512];
-                            util_zero(tmp, 512);
-                            int x;
-                            for(x = 0; x < curr->value_indent*5; x++)
+                            int indent = curr->value_indent;
+                            if(parent_find_len == 1)
                             {
-                                util_cpy(tmp+strlen(tmp), " ", 0, 1);
+                                char tmp[512];
+                                int j;
+
+                                configutil_zero(tmp, 512);
+                                for(j = 0; j < indent*5; j++)
+                                {
+                                    configutil_cpy(tmp+configutil_len(tmp), " ", 0, 1);
+                                }
+
+                                fprintf(newfp, "%s%s: %s\r\n", tmp, entry_str, value);
+                                fflush(newfp);
+                                replaced = 1;
+                                flush = 1;
+                                
+                                #ifdef DEBUG
+                                printf("[5] write %s:%s with %s\r\n", path, entry_str, value);
+                                #endif
                             }
-                            fprintf(newfp, "%s%s: %s\r\n", tmp, entry_str, value);
-                            fflush(newfp);
-                            replaced = 1;
-                            flush = 1;
-                            #ifdef DEBUG
-                            printf("[3] write %s:%s with %s\r\n", path, entry_str, value);
-                            #endif
+                            else
+                            {
+                                int x;
+                                for(x = 1; x < parent_find_len; x++)
+                                {
+                                    char tmp[512];
+                                    int j;
+
+                                    configutil_zero(tmp, 512);
+
+                                    for(j = 0; j < indent*5; j++)
+                                    {
+                                        configutil_cpy(tmp+configutil_len(tmp), " ", 0, 1);
+                                    }
+
+                                    int path_parts_count = 0;
+                                    uint8_t **path_parts = configutil_tokenize(parent_find[x].parent_path, configutil_len(parent_find[x].parent_path), &path_parts_count, '.');
+
+                                    if(path_parts != NULL)
+                                    {
+                                        if(path_parts_count > 0)
+                                        {
+                                            fprintf(newfp, "%s%s: [\r\n", tmp, path_parts[path_parts_count-1]);
+                                            fflush(newfp);
+                                            for(j = 0; j < path_parts_count; j++)
+                                            {
+                                                free(path_parts[j]);
+                                                path_parts[j] = NULL;
+                                            }
+                                        }
+                                        free(path_parts);
+                                        path_parts = NULL;
+                                    }
+                                    
+                                    indent++;
+
+                                    configutil_zero(tmp, 512);
+
+                                    
+                                    if(x == parent_find_len-1)
+                                    {
+                                        for(j = 0; j < indent*5; j++)
+                                        {
+                                            configutil_cpy(tmp+configutil_len(tmp), " ", 0, 1);
+                                        }
+
+                                        fprintf(newfp, "%s%s: %s\r\n", tmp, entry_str, value);
+                                        fflush(newfp);
+                                        replaced = 1;
+                                        flush = 1;
+                                        
+                                        #ifdef DEBUG
+                                        printf("[3] write %s:%s with %s\r\n", path, entry_str, value);
+                                        #endif
+                                    }
+                                }
+
+                                for(x = 1; x < parent_find_len; x++)
+                                {
+                                    char tmp[512];
+                                    int j;
+
+                                    configutil_zero(tmp, 512);
+
+                                    indent--;
+
+                                    for(j = 0; j < indent*5; j++)
+                                    {
+                                        configutil_cpy(tmp+configutil_len(tmp), " ", 0, 1);
+                                    }
+
+                                    fprintf(newfp, "%s]\r\n", tmp);
+                                    fflush(newfp);
+                                    
+                                    indent--;
+                                }
+                            }
                         }
                     }
                     in_group--;
@@ -488,11 +771,11 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                     struct config_entry_t *entry = malloc(sizeof(struct config_entry_t));
                     entry->parent = curr;
 
-                    util_zero(entry->location, 1024);
-                    util_zero(entry->value, 1024);
-                    util_cpy(entry->location, buffer, util_get_white_end(buffer, 1024), pos-1);
-                    util_cpy(entry->value, buffer, pos+2, 1024-pos);
-                    if(path != NULL && strcmp(path, entry->parent->parent_path) == 0)
+                    configutil_zero(entry->location, 1024);
+                    configutil_zero(entry->value, 1024);
+                    configutil_cpy(entry->location, buffer+configutil_get_white_end(buffer, 1024), 0, pos-configutil_get_white_end(buffer, 1024));
+                    configutil_cpy(entry->value, buffer+pos+2, 0, 256);
+                    if(parent_find != NULL && strcmp(parent_find[0].parent_path, entry->parent->parent_path) == 0)
                     {
                         if(strcmp(entry->location, entry_str) == 0)
                         {
@@ -500,10 +783,13 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                             {
                                 replaced = 1;
                                 flush = 0;
+                                #ifdef DEBUG
+                                printf("No Value! \r\n");
+                                #endif
                             }
                             else 
                             {
-                                int whitespace = util_get_white_end(buffer, 1024);
+                                int whitespace = configutil_get_white_end(buffer, 1024);
                                 int a = 0;
                                 for(a = 0; a < whitespace; a++)
                                 {
@@ -514,7 +800,7 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                                 replaced = 1;
                                 flush = 0;
                                 #ifdef DEBUG
-                                printf("[1] replace %s:%s with %s\r\n", path, entry->location, value);
+                                printf("[1] replace %s:%s with %s\r\n", parent_find[0].parent_path, entry->location, value);
                                 #endif
                             }
                         }
@@ -534,11 +820,11 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                     struct config_entry_t *entry = malloc(sizeof(struct config_entry_t));
                     entry->parent = NULL;
 
-                    util_zero(entry->location, 1024);
-                    util_zero(entry->value, 1024);
+                    configutil_zero(entry->location, 1024);
+                    configutil_zero(entry->value, 1024);
 
-                    util_cpy(entry->location, buffer, util_get_white_end(buffer, 1024), pos-1);
-                    util_cpy(entry->value, buffer, pos+2, 256);
+                    configutil_cpy(entry->location, buffer+configutil_get_white_end(buffer, 1024), 0, pos-configutil_get_white_end(buffer, 1024));
+                    configutil_cpy(entry->value, buffer+pos+2, 0, 256);
                     if(path == NULL)
                     {
                         if(strcmp(entry->location, entry_str) == 0)
@@ -547,10 +833,13 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                             {
                                 replaced = 1;
                                 flush = 0;
+                                #ifdef DEBUG
+                                printf("No Value!2\r\n");
+                                #endif
                             }
                             else 
                             {
-                                int whitespace = util_get_white_end(buffer, 1024);
+                                int whitespace = configutil_get_white_end(buffer, 1024);
                                 int a = 0;
                                 for(a = 0; a < whitespace; a++)
                                 {
@@ -572,6 +861,7 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
                 }
             }
         }
+
         if(flush == 1)
         {
             fprintf(newfp, "%s\r\n", buffer);
@@ -581,7 +871,7 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
         {
             flush = 1;
         }
-        util_zero(buffer, 1024);
+        configutil_zero(buffer, 1024);
     }
 
     if(replaced == 0)
@@ -594,13 +884,13 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
             printf("[4] replace %s with %s\r\n", entry_str, value);
             #endif
         }
-        else
+        else if(path != NULL && value != NULL)
         {
 
         }
     }
 
-    util_zero(buffer, 1024);
+    configutil_zero(buffer, 1024);
     free(buffer);
     buffer = NULL;
 
@@ -610,7 +900,8 @@ struct config_t *config_entry_set(struct config_t *cfg, char *path, char *entry_
     rename(newfile, cfg->location);
 
     char cfg_path[1024];
-    util_cpy(cfg_path, cfg->location, 0, strlen(cfg->location));
+    configutil_zero(cfg_path, 1024);
+    configutil_cpy(cfg_path, cfg->location, 0, configutil_len(cfg->location));
 
     free_config(&cfg);
 
