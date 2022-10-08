@@ -316,20 +316,18 @@ uint8_t **config_entry_get_section(struct config_t *cfg, char *path, int *_ret_l
         {
             if(strcmp(cfg->parents[x]->parent_path, path) == 0)
             {
-                printf("parent \"%s\" path \"%s\"\r\n", cfg->parents[x]->parent_path, path);
                 int j = 0;
                 
                 for(j = 0; j < cfg->entries_len; j++)
                 {
                     if(cfg->entries[j]->parent != NULL && cfg->entries[j]->parent->prev != NULL)
                     {
-                        printf("compare path to parent path \"%s\" at \"%s\"\r\n", path, cfg->entries[j]->parent->prev->parent_path);
                         if(!strcmp(path, cfg->entries[j]->parent->prev->parent_path))
                         {
-                             /*int i, found = 0;
+                             int i, found = 0;
                              for(i = 0; i < ret_len; i++)
                              {
-                                  if(strcmp(ret[i],cfg->entries[j]->parent->parent_path) == 0)
+                                  if(strcmp(ret[i], cfg->entries[j]->parent->parent_path) == 0)
                                   {
                                       found = 1;
                                       break;
@@ -337,8 +335,7 @@ uint8_t **config_entry_get_section(struct config_t *cfg, char *path, int *_ret_l
                              }
                              
                             if(found == 1) continue;
-                            */
-                             
+                            
                             printf("Found entry section %s at %d\r\n", cfg->entries[j]->parent->parent_path, j);
                             ret = realloc(ret, (ret_len+1)*sizeof(uint8_t *));
                             ret[ret_len] = malloc(configutil_len(cfg->entries[j]->parent->parent_path)+1);
@@ -363,7 +360,6 @@ uint8_t **config_entry_get_section(struct config_t *cfg, char *path, int *_ret_l
 
                         if(found == 1) continue;
 
-                        printf("Found entry section %s at %d\r\n", cfg->entries[j]->parent->parent_path, j);
                         ret = realloc(ret, (ret_len+1)*sizeof(uint8_t *));
                         ret[ret_len] = malloc(configutil_len(cfg->entries[j]->parent->parent_path)+1);
                         uint8_t *str = ret[ret_len];
